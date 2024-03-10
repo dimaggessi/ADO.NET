@@ -1,7 +1,7 @@
 ﻿using System.Data;
 using System.Data.SqlClient;
 
-namespace ADO.NET.Repositories.DatabaseConnection;
+namespace ADO.NET.Repositories.Database;
 
 
 /* [ A conexão é feita através do ADO.NET que possui um conjunto de classes e interfaces
@@ -19,15 +19,54 @@ namespace ADO.NET.Repositories.DatabaseConnection;
  * 
  *  No caso, como o Banco de Dados é SQL Server, se usa o System.Data.SqlClient
  */
-public class DatabaseContext
+public class DatabaseConnection : IDisposable
 {
-    private IDbConnection _connection;
+    private readonly IConfiguration _configuration;
+    private string _connectionString;
+    private SqlConnection _connection;
 
-    public DatabaseContext()
+    public DatabaseConnection(IConfiguration configuration)
     {
         // SqlCredential dentro de SqlConnection seria basicamente usuário e senha
         // SqlConnection varia de acordo com o Banco de Dados que vai ser utilizado
         // por exemplo, poderia ser MySqlConnection
-        _connection = new SqlConnection(@"Data Source = DRACULA\MSSQLSERVER01; Initial Catalog = ADO.NET; Integrated Security = True;");
+
+        _configuration = configuration;
+
+        _connectionString = _configuration.GetSection("ConnectionStrings")["ADO.NET"];
+
+        _connection = new SqlConnection(_connectionString);
+
+    }
+
+    // SqlConnection possui uma propriedade ConnectionSate que é um Enum de estados de conexões
+    public void Open() 
+    {
+        if (_connection.State != ConnectionState.Open)
+        {
+            _connection.Open();
+        }
+    }
+
+    public void Close()
+    {
+        if (_connection.State != ConnectionState.Closed)
+        { 
+            _connection.Close();
+        }
+    }
+
+    public SqlCommand CreateCommand()
+    {
+        return _connection.CreateCommand();
+    }
+
+    public void Dispose()
+    {
+        if (_connection is not null)
+        {
+            _connection.Dispose();
+            _connection = null;
+        }
     }
 }

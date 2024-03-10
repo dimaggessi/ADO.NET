@@ -18,11 +18,13 @@ public class UsuariosController : ControllerBase
     [HttpGet]
     public IActionResult Get()
     {
-        return Ok(_repository.Get());
+        var result = _repository.Get();
+
+        return Ok(result);
     }
 
     [HttpGet("id")]
-    public IActionResult Get(int id)
+    public IActionResult Get([FromQuery] int id)
     {
         var result = _repository.Get(id);
         
@@ -35,8 +37,12 @@ public class UsuariosController : ControllerBase
     [HttpPost]
     public IActionResult Post([FromBody] Usuario usuario)
     {
+        usuario.DataCadastro = DateTimeOffset.Now;
+        usuario.SituacaoCadastro = "A";
+
         _repository.Create(usuario);
-        return Ok(usuario);
+
+        return Ok($"Usuário {usuario.Id} cadastrado com sucesso.");
     }
 
     [HttpPut] 
@@ -46,8 +52,8 @@ public class UsuariosController : ControllerBase
         return Ok(usuario);
     }
 
-    [HttpDelete]
-    public IActionResult Delete(int id)
+    [HttpDelete("id")]
+    public IActionResult Delete([FromQuery] int id)
     {
         _repository.Delete(id);
 
