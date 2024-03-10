@@ -33,6 +33,7 @@ public class UsuarioRepository : IUsuarioRepository
      * --------------------------------------------
      */
     private readonly DatabaseConnection _connection;
+
     public UsuarioRepository(DatabaseConnection connection)
     {
         _connection = connection;
@@ -93,13 +94,14 @@ public class UsuarioRepository : IUsuarioRepository
 
     public Usuario Get(int id)
     {
-        // Concatenação deixa o código vulnerável a SQL Injection:
-        string select = $"SELECT * FROM Usuarios WHERE Id = @Id";
-
+        // Concatenação deixa o código vulnerável a SQL Injection: (usar Parameters)
+        // LEFT JOIN afirma que sempre vai trazer um usuário, ainda que Contatos seja null
+        string select = $"SELECT *, c.Id ContatoId, e.Id EnderecoId FROM Usuarios AS u " 
+            + "LEFT JOIN Contatos AS c ON c.UsuarioId = u.Id " 
+            + "LEFT JOIN EnderecosEntrega e ON u.Id = e.UsuarioId "
+            + "WHERE u.Id = @Id";
 
         using var dbConnection = _connection;
-
-        Usuario usuario = new();
 
         try
         {
@@ -113,17 +115,54 @@ public class UsuarioRepository : IUsuarioRepository
 
             SqlDataReader dataReader = command.ExecuteReader();
 
+            Usuario usuario = null;
+            Contato contato = null;
+
             while (dataReader.Read())
             {
-                usuario.Id = dataReader.GetInt32("Id");
-                usuario.Nome = dataReader.GetString("Nome");
-                usuario.Email = dataReader.GetString("Email");
-                usuario.Sexo = dataReader.GetString("Sexo");
-                usuario.RG = dataReader.GetString("RG");
-                usuario.CPF = dataReader.GetString("CPF");
-                usuario.NomeMae = dataReader.GetString("NomeMae");
-                usuario.SituacaoCadastro = dataReader.GetString("SituacaoCadastro");
-                usuario.DataCadastro = dataReader.GetDateTimeOffset(8);
+                if (usuario is null)
+                {
+                    usuario = new()
+                    {
+                        Id = dataReader.GetInt32("Id"),
+                        Nome = dataReader.GetString("Nome"),
+                        Email = dataReader.GetString("Email"),
+                        Sexo = dataReader.GetString("Sexo"),
+                        RG = dataReader.GetString("RG"),
+                        CPF = dataReader.GetString("CPF"),
+                        NomeMae = dataReader.GetString("NomeMae"),
+                        SituacaoCadastro = dataReader.GetString("SituacaoCadastro"),
+                        DataCadastro = dataReader.GetDateTimeOffset(8)
+                    };
+
+                    contato = new()
+                    {
+                        Id = dataReader.GetInt32("ContatoId"),
+                        UsuarioId = dataReader.GetInt32("UsuarioId"),
+                        Telefone = dataReader.GetString("Telefone"),
+                        Celular = dataReader.GetString("Celular")
+                    };
+
+                    usuario.Contato = contato;
+                }
+
+                EnderecoEntrega endereco = new()
+                {
+                    Id = dataReader.GetInt32("EnderecoId"),
+                    UsuarioId = dataReader.GetInt32("UsuarioId"),
+                    NomeEndereco = dataReader.GetString("NomeEndereco"),
+                    CEP = dataReader.GetString("CEP"),
+                    Estado = dataReader.GetString("Estado"),
+                    Cidade = dataReader.GetString("Cidade"),
+                    Bairro = dataReader.GetString("Bairro"),
+                    Endereco = dataReader.GetString("Endereco"),
+                    Numero = dataReader.GetString("Numero"),
+                    Complemento = dataReader.GetString("Complemento")
+                };          
+
+                usuario.EnderecosEntrega ??= new List<EnderecoEntrega>();
+
+                usuario.EnderecosEntrega.Add(endereco);
             }
             return usuario;
         }
