@@ -39,10 +39,10 @@ public class UsuariosController : ControllerBase
     {
         usuario.DataCadastro = DateTimeOffset.Now;
         usuario.SituacaoCadastro = "A";
-
+        
         _repository.Create(usuario);
 
-        return Ok($"Usuário {usuario.Id} cadastrado com sucesso.");
+        return Ok(usuario);
     }
 
     [HttpPut] 

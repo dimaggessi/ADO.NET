@@ -96,9 +96,13 @@ public class UsuarioRepository : IUsuarioRepository
     {
         // Concatenação deixa o código vulnerável a SQL Injection: (usar Parameters)
         // LEFT JOIN afirma que sempre vai trazer um usuário, ainda que Contatos seja null
-        string select = $"SELECT *, c.Id ContatoId, e.Id EnderecoId FROM Usuarios AS u " 
+        string select = $"SELECT *, "
+            + "c.Id ContatoId, e.Id EnderecoId, d.Nome NomeDepartamento "
+            + "FROM Usuarios AS u "
             + "LEFT JOIN Contatos AS c ON c.UsuarioId = u.Id " 
             + "LEFT JOIN EnderecosEntrega e ON u.Id = e.UsuarioId "
+            + "LEFT JOIN UsuariosDepartamentos AS ud ON ud.UsuarioId = u.Id "
+            + "LEFT JOIN Departamentos AS d ON d.Id = ud.DepartamentoId "
             + "WHERE u.Id = @Id";
 
         using var dbConnection = _connection;
@@ -117,6 +121,7 @@ public class UsuarioRepository : IUsuarioRepository
 
             Usuario usuario = null;
             Contato contato = null;
+            Departamento departamento = null;
 
             while (dataReader.Read())
             {
@@ -162,7 +167,19 @@ public class UsuarioRepository : IUsuarioRepository
 
                 usuario.EnderecosEntrega ??= new List<EnderecoEntrega>();
 
-                usuario.EnderecosEntrega.Add(endereco);
+                if (!usuario.EnderecosEntrega.Any(end => end.Id == endereco.Id))
+                    usuario.EnderecosEntrega.Add(endereco);
+
+                usuario.Departamentos ??= new List<Departamento>();
+
+                departamento = new()
+                {
+                    Id = dataReader.GetInt32("DepartamentoId"),
+                    Nome = dataReader.GetString("NomeDepartamento")
+                };
+
+                if (!usuario.Departamentos.Any(dep => dep.Id == departamento.Id))
+                    usuario.Departamentos.Add(departamento);
             }
             return usuario;
         }
@@ -182,15 +199,16 @@ public class UsuarioRepository : IUsuarioRepository
     public void Create(Usuario usuario)
     {
         using var dbConection = _connection;
-        string insert = "INSERT INTO Usuarios(Nome, Email, Sexo, RG, CPF, NomeMae, SituacaoCadastro, DataCadastro) " 
-            + "VALUES (@Nome, @Email, @Sexo, @RG, @CPF, @NomeMae, @SituacaoCadastro, @DataCadastro);"
-            + "SELECT CAST(scope_identity() AS int)";
-        // ao final pega o ultimo Identity baseado no escopo de execução do Insert, para retornar ao usuário
+        
 
         try
         {
+            // SELECT CAST(scope_identity() AS int)
+            // ao final pega o ultimo Identity baseado no escopo de execução do Insert, para retornar ao usuário
             SqlCommand command = dbConection.CreateCommand();
-            command.CommandText = insert;
+            command.CommandText = "INSERT INTO Usuarios(Nome, Email, Sexo, RG, CPF, NomeMae, SituacaoCadastro, DataCadastro) "
+            + "VALUES (@Nome, @Email, @Sexo, @RG, @CPF, @NomeMae, @SituacaoCadastro, @DataCadastro);"
+            + "SELECT CAST(scope_identity() AS int)";
 
             command.Parameters.AddWithValue("@Nome", usuario.Nome);
             command.Parameters.AddWithValue("@Email", usuario.Email);
@@ -203,11 +221,61 @@ public class UsuarioRepository : IUsuarioRepository
 
             dbConection.Open();
 
-            // ExecuteNonQuery() não retorna valores, apenas a quantidade de linhas afetadas
-            // command.ExecuteNonQuery();
-
-            // o Scalar executa a query e retorna a primeira coluna, da primeira linha, no resultado retornado pela query
+            // command.ExecuteNonQuery(); não retorna valores, apenas a quantidade de linhas afetadas
+            // o command.ExecuteScalar(); executa a query e retorna a primeira coluna, da primeira linha, no resultado retornado pela query
             usuario.Id = (int)command.ExecuteScalar();
+
+            command.CommandText = "INSERT INTO Contatos (UsuarioId, Telefone, Celular) "
+                + "VALUES (@UsuarioId, @Telefone, @Celular); "
+                + "SELECT CAST(scope_identity() AS int)";
+
+            command.Parameters.AddWithValue("@UsuarioId", usuario.Id);
+            command.Parameters.AddWithValue("@Telefone", usuario.Contato.Telefone);
+            command.Parameters.AddWithValue("@Celular", usuario.Contato.Celular);
+
+            usuario.Contato.UsuarioId = usuario.Id;
+            usuario.Contato.Id = (int)command.ExecuteScalar();
+
+            
+
+            foreach (var endereco in usuario.EnderecosEntrega)
+            {
+                command = dbConection.CreateCommand();
+
+                command.CommandText = "INSERT INTO EnderecosEntrega "
+                    + "(UsuarioId, NomeEndereco, CEP, Estado, Cidade, Bairro, Endereco, Numero, Complemento) "
+                    + "VALUES "
+                    + "(@UsuarioId, @NomeEndereco, @CEP, @Estado, @Cidade, @Bairro, @Endereco, @Numero, @Complemento); "
+                    + "SELECT CAST(scope_identity() AS int)";
+
+                command.Parameters.AddWithValue("@UsuarioId", usuario.Id);
+                command.Parameters.AddWithValue("@NomeEndereco", endereco.NomeEndereco);
+                command.Parameters.AddWithValue("@CEP", endereco.CEP);
+                command.Parameters.AddWithValue("@Estado", endereco.Estado);
+                command.Parameters.AddWithValue("@Cidade", endereco.Cidade);
+                command.Parameters.AddWithValue("@Bairro", endereco.Bairro);
+                command.Parameters.AddWithValue("@Endereco", endereco.Endereco);
+                command.Parameters.AddWithValue("@Numero", endereco.Numero);
+                command.Parameters.AddWithValue("@Complemento", endereco.Complemento);
+
+                endereco.Id = (int)command.ExecuteScalar();
+                endereco.UsuarioId = usuario.Id;
+            }
+
+            foreach (var departamento in usuario.Departamentos) 
+            {
+                command = dbConection.CreateCommand();
+
+                command.CommandText = "INSERT INTO UsuariosDepartamentos "
+                    + "(UsuarioId, DepartamentoId) "
+                    + "VALUES "
+                    + "(@UsuarioId, @DepartamentoId);";
+
+                command.Parameters.AddWithValue("@UsuarioId", usuario.Id);
+                command.Parameters.AddWithValue("@DepartamentoId", departamento.Id);
+
+                command.ExecuteNonQuery();
+            }
         }
         catch (Exception ex)
         {
