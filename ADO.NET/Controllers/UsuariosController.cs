@@ -37,11 +37,17 @@ public class UsuariosController : ControllerBase
     [HttpPost]
     public IActionResult Post([FromBody] Usuario usuario)
     {
-        usuario.DataCadastro = DateTimeOffset.Now;
-        usuario.SituacaoCadastro = "A";
-        
-        _repository.Create(usuario);
+        try
+        {
+            usuario.DataCadastro = DateTimeOffset.Now;
+            usuario.SituacaoCadastro = "A";
 
+            _repository.Create(usuario);
+        }
+        catch (Exception)
+        {
+            return StatusCode(500, "Erro ao tentar inserir usuário");
+        }
         return Ok(usuario);
     }
 

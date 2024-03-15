@@ -2,6 +2,7 @@
 using ADO.NET.Repositories.Database;
 using System.Data;
 using System.Data.SqlClient;
+using System.Transactions;
 
 namespace ADO.NET.Repositories;
 
@@ -49,20 +50,20 @@ public class UsuarioRepository : IUsuarioRepository
         {
             dbConnection.Open();
 
-            // O provider SQL Server utiliza SqlCommand
+            // O provider SQL Server utiliza SqlCommand.
             var command = dbConnection.CreateCommand();
             command.CommandText = selectAll;
 
-            // [ DataReader ] ExecuteReader() arquitetura conectada
+            // [ DataReader ] ExecuteReader() arquitetura conectada.
             SqlDataReader dataReader = command.ExecuteReader();
 
             // Read() apenas lê uma linha (é um ponteiro)
-            // retorna true se houverem mais linhas a serem lidas
+            // retorna true se houverem mais linhas a serem lidas.
             while (dataReader.Read())
             {
                 Usuario usuario = new Usuario();
                 
-                // o dataReader vai pegar o valor na coluna de título informado
+                // o dataReader vai pegar o valor na coluna de título informado.
                 usuario.Id = dataReader.GetInt32("Id");
                 usuario.Nome = dataReader.GetString("Nome");
                 usuario.Email = dataReader.GetString("Email");
@@ -73,10 +74,10 @@ public class UsuarioRepository : IUsuarioRepository
                 usuario.SituacaoCadastro = dataReader.GetString("SituacaoCadastro");
 
                 // o GetDateTimeOffset espera receber o número da coluna
-                // lembrando que começa a contagem em zero (0)
+                // lembrando que começa a contagem em zero (0).
                 usuario.DataCadastro = dataReader.GetDateTimeOffset(8);
 
-                // adiciona o usuário instanciado, na Lista Usuários
+                // adiciona o usuário instanciado, na Lista Usuários.
                 usuarios.Add(usuario);
             };
         }
@@ -95,7 +96,7 @@ public class UsuarioRepository : IUsuarioRepository
     public Usuario Get(int id)
     {
         // Concatenação deixa o código vulnerável a SQL Injection: (usar Parameters)
-        // LEFT JOIN afirma que sempre vai trazer um usuário, ainda que Contatos seja null
+        // LEFT JOIN afirma que sempre vai trazer um usuário, ainda que Contatos seja null.
         string select = $"SELECT *, "
             + "c.Id ContatoId, e.Id EnderecoId, d.Nome NomeDepartamento "
             + "FROM Usuarios AS u "
@@ -114,7 +115,7 @@ public class UsuarioRepository : IUsuarioRepository
             SqlCommand command = dbConnection.CreateCommand();
             command.CommandText = select;
 
-            // Utiliza substituição de parâmetros para evitar SQL Injection
+            // Utiliza substituição de parâmetros para evitar SQL Injection.
             command.Parameters.AddWithValue("Id", id);
 
             SqlDataReader dataReader = command.ExecuteReader();
@@ -192,20 +193,25 @@ public class UsuarioRepository : IUsuarioRepository
             dbConnection.Close();
         }
 
-        // caso não encontre o usuário, retorna nulo
+        // caso não encontre o usuário, retorna nulo.
         return null;
     }
 
     public void Create(Usuario usuario)
     {
-        using var dbConection = _connection;
-        
+        using DatabaseConnection dbConection = _connection;
+        dbConection.Open();
+
+        // Inicia uma transaction (ACID).
+        SqlTransaction transaction = dbConection.BeginTransaction();
 
         try
         {
+            SqlCommand command = dbConection.CreateCommand();
+            command.Transaction = transaction;
+
             // SELECT CAST(scope_identity() AS int)
             // ao final pega o ultimo Identity baseado no escopo de execução do Insert, para retornar ao usuário
-            SqlCommand command = dbConection.CreateCommand();
             command.CommandText = "INSERT INTO Usuarios(Nome, Email, Sexo, RG, CPF, NomeMae, SituacaoCadastro, DataCadastro) "
             + "VALUES (@Nome, @Email, @Sexo, @RG, @CPF, @NomeMae, @SituacaoCadastro, @DataCadastro);"
             + "SELECT CAST(scope_identity() AS int)";
@@ -219,10 +225,9 @@ public class UsuarioRepository : IUsuarioRepository
             command.Parameters.AddWithValue("@SituacaoCadastro", usuario.SituacaoCadastro);
             command.Parameters.AddWithValue("@DataCadastro", usuario.DataCadastro);
 
-            dbConection.Open();
-
-            // command.ExecuteNonQuery(); não retorna valores, apenas a quantidade de linhas afetadas
-            // o command.ExecuteScalar(); executa a query e retorna a primeira coluna, da primeira linha, no resultado retornado pela query
+            
+            // command.ExecuteNonQuery(); não retorna valores, apenas a quantidade de linhas afetadas.
+            // command.ExecuteScalar(); executa a query e retorna a primeira coluna, da primeira linha, no resultado retornado pela query.
             usuario.Id = (int)command.ExecuteScalar();
 
             command.CommandText = "INSERT INTO Contatos (UsuarioId, Telefone, Celular) "
@@ -241,6 +246,7 @@ public class UsuarioRepository : IUsuarioRepository
             foreach (var endereco in usuario.EnderecosEntrega)
             {
                 command = dbConection.CreateCommand();
+                command.Transaction = transaction;
 
                 command.CommandText = "INSERT INTO EnderecosEntrega "
                     + "(UsuarioId, NomeEndereco, CEP, Estado, Cidade, Bairro, Endereco, Numero, Complemento) "
@@ -265,6 +271,7 @@ public class UsuarioRepository : IUsuarioRepository
             foreach (var departamento in usuario.Departamentos) 
             {
                 command = dbConection.CreateCommand();
+                command.Transaction = transaction;
 
                 command.CommandText = "INSERT INTO UsuariosDepartamentos "
                     + "(UsuarioId, DepartamentoId) "
@@ -276,10 +283,23 @@ public class UsuarioRepository : IUsuarioRepository
 
                 command.ExecuteNonQuery();
             }
+
+            // Termina a transaction com sucesso.
+            transaction.Commit();
         }
         catch (Exception ex)
         {
             Console.WriteLine(ex.Message);
+            try
+            {
+                // Efetua o Rollback da transaction em caso de erros.
+                transaction.Rollback();
+            }
+            catch (InvalidOperationException e)
+            {
+                Console.WriteLine($"Error: {e.Message}");
+                throw new Exception();
+            }
         }
         finally 
         {

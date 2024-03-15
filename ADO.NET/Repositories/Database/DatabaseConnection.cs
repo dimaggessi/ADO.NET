@@ -61,6 +61,11 @@ public class DatabaseConnection : IDisposable
         return _connection.CreateCommand();
     }
 
+    public SqlTransaction BeginTransaction()
+    {
+        return _connection.BeginTransaction();
+    }
+
     public void Dispose()
     {
         if (_connection is not null)
